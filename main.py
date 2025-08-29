@@ -74,7 +74,7 @@ def qr_default() -> List[Dict]:
         {"action": "message", "label": "내일 시간표", "messageText": "내일 시간표"},
         {"action": "message", "label": "오늘 급식", "messageText": "오늘 급식"},
         {"action": "message", "label": "이번 주 학사일정", "messageText": "이번 주 학사일정"},
-        {"action": "message", "label": "학년/반 변경", "messageText": "학년변경 2 8"},
+        {"action": "message", "label": "학년/반 변경", "messageText": "학년/반 변경 2 8"},
     ]
 
 # ====== 날짜 파싱 ======
@@ -249,14 +249,14 @@ async def webhook(request: Request, x_kakao_signature: str = Header(None)):
     t = text.replace("학년반","학년/반")
 
     # 학년/반 설정
-    if t.startswith("학년변경") or t.startswith("학년/반"):
+    if t.startswith("학년/반 변경") or t.startswith("학년/반"):
         parts = t.split()
         if len(parts)>=3 and parts[1].isdigit() and parts[2].isdigit():
             g,c=int(parts[1]),int(parts[2])
             set_user(user_id,g,c)
             return kakao_simple_text(f"학년/반을 {g}학년 {c}반으로 설정했습니다.\n원하시는 기능을 선택하세요.", qr_default())
         else:
-            return kakao_simple_text("변경할 학년과 반을 입력해주세요. 예: `학년변경 2 8`", qr_default())
+            return kakao_simple_text("변경할 학년과 반을 입력해주세요. 예: `학년/반 변경 2 8`", qr_default())
 
     # 미등록 시 등록
     if (not user) and re.fullmatch(r"\s*\d+\s+\d+\s*", t):
@@ -295,7 +295,7 @@ async def webhook(request: Request, x_kakao_signature: str = Header(None)):
         return kakao_simple_text("이번 달 학사일정\n"+ "\n".join(items), qr_default())
 
     return kakao_simple_text(
-        "무엇을 도와드릴까요?\n가능한 명령: `오늘 시간표`, `내일 시간표`, `오늘 급식`, `9월3일 급식`, `이번 주 학사일정`, `이번 달 학사일정`, `학년변경 2 8`",
+        "무엇을 도와드릴까요?\n가능한 명령: `오늘 시간표`, `내일 시간표`, `오늘 급식`, `9월3일 급식`, `이번 주 학사일정`, `이번 달 학사일정`, `학년/반 변경 2 8`",
         qr_default()
     )
 
