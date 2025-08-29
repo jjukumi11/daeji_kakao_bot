@@ -141,4 +141,7 @@ async def webhook(request: Request, x_kakao_signature: str = Header(None)):
 # 서버 실행
 # -------------------------------
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=int(os.environ.get("PORT", 8000)))
+    import os
+    import uvicorn
+    port = int(os.environ.get("PORT", 8000))  # Render 환경변수 PORT 사용
+    uvicorn.run(app, host="0.0.0.0", port=port)
