@@ -7,9 +7,9 @@ import datetime
 DB_PATH = "users.db"
 app = FastAPI()
 
-# -------------------------------
+# ---------------------
 # DB 초기화
-# -------------------------------
+# ---------------------
 def init_db():
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
@@ -24,9 +24,9 @@ def init_db():
 
 init_db()
 
-# -------------------------------
-# 사용자 DB 조회/저장
-# -------------------------------
+# ---------------------
+# DB 조회/저장 함수
+# ---------------------
 def get_user(kakao_id):
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
@@ -45,21 +45,29 @@ def set_user(kakao_id, grade, clas):
     conn.commit()
     conn.close()
 
-# -------------------------------
-# 예시 데이터 가져오기
-# -------------------------------
-def fetch_timetable(grade, clas):
-    return f"{grade}학년 {clas}반 시간표 예시: 월: 국어, 수학 / 화: 영어, 과학"
+# ---------------------
+# 데이터 가져오기 (예시)
+# ---------------------
+def fetch_timetable(grade, clas, date=None):
+    # 실제 컴시간알리미 사이트에서 크롤링하면 이 부분 교체
+    today = date or datetime.date.today().strftime("%Y-%m-%d")
+    timetable = f"{today} {grade}학년 {clas}반 시간표:\n1교시: 수학\n2교시: 국어\n3교시: 영어\n4교시: 과학"
+    return timetable
 
-def fetch_meal(date_str):
-    return f"{date_str} 급식 예시: 떡볶이, 김밥, 샐러드"
+def fetch_meal(date=None):
+    # 실제 급식 사이트 크롤링 시 교체
+    date_str = date or datetime.date.today().strftime("%Y-%m-%d")
+    meal = f"{date_str} 급식:\n- 기장밥\n- 소고기 뭇국\n- 감자샐러드"
+    return meal
 
 def fetch_calendar():
-    return "- 9/1 개학\n- 9/10 모의고사 (예시)"
+    # 실제 학사일정 사이트 크롤링 시 교체
+    events = "- 9/1 개학\n- 9/10 모의고사 (예시)"
+    return events
 
-# -------------------------------
-# 카톡 JSON 생성
-# -------------------------------
+# ---------------------
+# 카카오톡 간단 텍스트 반환
+# ---------------------
 def kakao_simple_text(text, quick_replies=None):
     payload = {
         "version": "2.0",
@@ -71,37 +79,38 @@ def kakao_simple_text(text, quick_replies=None):
         payload["template"]["quickReplies"] = quick_replies
     return payload
 
-# -------------------------------
-# 웹훅
-# -------------------------------
+# ---------------------
+# Webhook
+# ---------------------
 @app.post("/webhook")
 async def webhook(request: Request, x_kakao_signature: str = Header(None)):
     body = await request.json()
-    print("Received:", body)
+    print("Received:", body)  # Render 로그에서 확인
 
-    try:
-        user_id = body.get("userRequest", {}).get("user", {}).get("id") or body.get("userRequest", {}).get("user", {}).get("userId")
-        text = body.get("userRequest", {}).get("utterance", "")
-    except:
-        return kakao_simple_text("요청 파싱 실패")
+    # 사용자 ID 가져오기
+    user_id = body.get("userRequest", {}).get("user", {}).get("id") \
+              or body.get("userRequest", {}).get("user", {}).get("userId")
+    text = body.get("userRequest", {}).get("utterance", "").strip()
+
     if not user_id:
         return kakao_simple_text("사용자 ID를 확인할 수 없습니다.")
 
     user = get_user(user_id)
+    # 학년/반 미등록 시 등록 유도
     if not user:
         qr = [
             {"action":"message","label":"학년/반 입력 (예: 2 8)","messageText":"학년/반 2 8"},
             {"action":"message","label":"학년변경","messageText":"학년변경"}
         ]
-        return kakao_simple_text("안녕하세요! 학년과 반을 입력해주세요. 예: `2 8`", quick_replies=qr)
+        return kakao_simple_text("안녕하세요! 사용하실 학년과 반을 입력해주세요. 예: `2 8`", quick_replies=qr)
 
-    txt = text.strip()
     # 학년/반 변경
-    if txt.startswith("학년변경") or txt.startswith("학년/반"):
-        parts = txt.split()
+    if text.startswith("학년변경") or text.startswith("학년/반"):
+        parts = text.split()
         if len(parts) >= 3:
             try:
-                g = int(parts[1]); c = int(parts[2])
+                g = int(parts[1])
+                c = int(parts[2])
                 set_user(user_id, g, c)
                 return kakao_simple_text(f"학년/반을 {g}학년 {c}반으로 변경했습니다.")
             except:
@@ -114,8 +123,8 @@ async def webhook(request: Request, x_kakao_signature: str = Header(None)):
             return kakao_simple_text("변경할 학년과 반을 입력해주세요. 예: `학년/반 2 8`", quick_replies=qr)
 
     # 학년/반 등록
-    if txt.startswith("학년/반") or (len(txt.split())==2 and all(s.isdigit() for s in txt.split())):
-        parts = txt.split()
+    if text.startswith("학년/반") or (len(text.split())==2 and all(s.isdigit() for s in text.split())):
+        parts = text.split()
         if parts[0]=="학년/반":
             parts = parts[1:]
         if len(parts)==2 and parts[0].isdigit() and parts[1].isdigit():
@@ -123,25 +132,43 @@ async def webhook(request: Request, x_kakao_signature: str = Header(None)):
             set_user(user_id, g, c)
             return kakao_simple_text(f"등록되었습니다: {g}학년 {c}반. 원하시면 '시간표', '급식', '학사일정'을 물어보세요.")
 
-    # 시간표/급식/학사일정 처리
-    if "시간표" in txt:
-        tt = fetch_timetable(user["grade"], user["class"])
-        return kakao_simple_text(f"{user['grade']}학년 {user['class']}반의 시간표:\n{tt}")
-    if "급식" in txt or "오늘 급식" in txt:
-        date_str = datetime.date.today().isoformat()
-        meal = fetch_meal(date_str)
-        return kakao_simple_text(f"{date_str} 급식:\n{meal}")
-    if "학사" in txt or "학사일정" in txt or "일정" in txt:
+    # ---------------------
+    # 질문 처리
+    # ---------------------
+    grade, clas = user["grade"], user["class"]
+
+    if "시간표" in text:
+        # "오늘 시간표", "내일 시간표" 등 처리
+        if "내일" in text:
+            date = (datetime.date.today() + datetime.timedelta(days=1)).strftime("%Y-%m-%d")
+        else:
+            date = datetime.date.today().strftime("%Y-%m-%d")
+        tt = fetch_timetable(grade, clas, date)
+        return kakao_simple_text(tt)
+
+    if "급식" in text:
+        # "오늘 급식", "9월3일 급식" 등 처리
+        date = None
+        import re
+        m = re.search(r'(\d{1,2})[/-](\d{1,2})', text)
+        if m:
+            month, day = int(m.group(1)), int(m.group(2))
+            year = datetime.date.today().year
+            date = datetime.date(year, month, day).strftime("%Y-%m-%d")
+        meal = fetch_meal(date)
+        return kakao_simple_text(밥)
+
+    if "학사" in text or "일정" in text:
         cal = fetch_calendar()
-        return kakao_simple_text(f"최근 학사일정:\n{cal}")
+        return kakao_simple_text(cal)
 
-    return kakao_simple_text("무엇을 도와드릴까요?\n가능한 명령: `시간표`, `급식`, `학사일정`, `학년변경 2 8`")
+    return kakao_simple_text(
+        "무엇을 도와드릴까요?\n가능한 명령: `오늘 시간표`, `내일 시간표`, `오늘 급식`, `학사일정`, `학년변경 2 8`"
+    )
 
-# -------------------------------
-# 서버 실행
-# -------------------------------
+# ---------------------
+# 실행
+# ---------------------
 if __name__ == "__main__":
-    import os
-    import uvicorn
-    port = int(os.environ.get("PORT", 8000))  # Render 환경변수 PORT 사용
+    port = int(os.environ.get("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port)
