@@ -124,9 +124,13 @@ def fetch_timetable_text(grade: int, clas: int, target_date: dt.date) -> str:
 
     try:
         tt = TimeTable(_COMCI_SCHOOL_NAME, week_num=week_num)
-        weekday_map = {0: getattr(tt, "MONDAY", 0), 1: getattr(tt, "TUESDAY", 1),
-                       2: getattr(tt, "WEDNESDAY", 2), 3: getattr(tt, "THURSDAY", 3),
-                       4: getattr(tt, "FRIDAY", 4)}
+        weekday_map = {
+            0: getattr(tt, "MONDAY", 0),
+            1: getattr(tt, "TUESDAY", 1),
+            2: getattr(tt, "WEDNESDAY", 2),
+            3: getattr(tt, "THURSDAY", 3),
+            4: getattr(tt, "FRIDAY", 4),
+        }
         day_idx = weekday_map[weekday]
 
         g, c = int(grade), int(clas)
@@ -139,15 +143,14 @@ def fetch_timetable_text(grade: int, clas: int, target_date: dt.date) -> str:
             return "해당 학년/반 시간표가 없습니다."
 
         lines = []
-        seen = set()
         for i, subj in enumerate(day_list, start=1):
             s = str(subj).strip()
-            if not s or s == "None":
-                s = "-"
-            if s in seen:
-                continue
-            seen.add(s)
+            if not s or s in ("None", "-", ""):
+                continue  # 빈 교시는 건너뜀
+            s = re.sub(r"^\d+\s*교시[:\s-]*", "", s)  # 접두어 제거
             lines.append(f"{i}교시: {s}")
+        if not lines:
+            return "해당 날짜에 수업이 없습니다."
         return "\n".join(lines)
     except Exception as e:
         return f"시간표 불러오기 실패: {e}"
@@ -171,22 +174,22 @@ def fetch_meal_text(target_date: dt.date) -> str:
         data = {}
         for tr in rows[1:]:
             tds = [td.get_text(" ", strip=True) for td in tr.find_all(["td","th"])]
-            if len(tds)<3:
+            if len(tds) < 3:
                 continue
             date_txt, _, menu_txt = tds[0], tds[1], tds[2]
             d = None
             m = re.search(r"(\d{4})[./-](\d{1,2})[./-](\d{1,2})", date_txt)
             if m:
-                y,mth,dday=int(m.group(1)),int(m.group(2)),int(m.group(3))
-                d = dt.date(y,mth,dday)
+                y, mth, dday = int(m.group(1)), int(m.group(2)), int(m.group(3))
+                d = dt.date(y, mth, dday)
             else:
                 m = re.search(r"(\d{1,2})[./-](\d{1,2})", date_txt)
                 if m:
                     y = target_date.year
                     mth, dday = int(m.group(1)), int(m.group(2))
-                    d = dt.date(y,mth,dday)
+                    d = dt.date(y, mth, dday)
             if d:
-                data[d]=menu_txt.replace("\\n","\n")
+                data[d] = menu_txt.replace("\\n", "\n")
         menu = data.get(target_date)
         if not menu:
             return "해당 날짜의 급식 정보가 없습니다."
@@ -208,7 +211,7 @@ def _get_schoolinfo_month_html(target_date: dt.date) -> str:
 def fetch_calendar_items(target_date_from: dt.date, target_date_to: dt.date) -> List[str]:
     try:
         html = _get_schoolinfo_month_html(target_date_from)
-        text = BeautifulSoup(html,"lxml").get_text("\n",strip=True)
+        text = BeautifulSoup(html, "lxml").get_text("\n", strip=True)
         pattern = re.compile(r"(\d{2})\.\s*(\d{2})\s*[월화수목금토일]\s*-\s*([^\n\r]+)")
         items = []
         for m in pattern.finditer(text):
@@ -226,7 +229,7 @@ def fetch_calendar_items(target_date_from: dt.date, target_date_to: dt.date) -> 
 def format_week_range(day: dt.date) -> (dt.date, dt.date):
     start = day - dt.timedelta(days=day.weekday())
     end = start + dt.timedelta(days=6)
-    return start,end
+    return start, end
 
 # ====== 웹훅 ======
 @app.post("/webhook")
@@ -237,8 +240,8 @@ async def webhook(request: Request, x_kakao_signature: str = Header(None)):
     user_id = None
     text = ""
     try:
-        user_id = body.get("userRequest",{}).get("user",{}).get("id")
-        text = body.get("userRequest",{}).get("utterance","").strip()
+        user_id = body.get("userRequest", {}).get("user", {}).get("id")
+        text = body.get("userRequest", {}).get("utterance", "").strip()
     except Exception:
         return kakao_simple_text("요청 파싱 실패", qr_default())
 
@@ -246,22 +249,22 @@ async def webhook(request: Request, x_kakao_signature: str = Header(None)):
         return kakao_simple_text("사용자 ID를 확인할 수 없습니다.", qr_default())
 
     user = get_user(user_id)
-    t = text.replace("학년반","학년/반")
+    t = text.replace("학년반", "학년/반")
 
     # 학년/반 설정
     if t.startswith("학년변경") or t.startswith("학년/반"):
         parts = t.split()
-        if len(parts)>=3 and parts[1].isdigit() and parts[2].isdigit():
-            g,c=int(parts[1]),int(parts[2])
-            set_user(user_id,g,c)
+        if len(parts) >= 3 and parts[1].isdigit() and parts[2].isdigit():
+            g, c = int(parts[1]), int(parts[2])
+            set_user(user_id, g, c)
             return kakao_simple_text(f"학년/반을 {g}학년 {c}반으로 설정했습니다.\n원하시는 기능을 선택하세요.", qr_default())
         else:
             return kakao_simple_text("변경할 학년과 반을 입력해주세요. 예: `학년변경 2 8`", qr_default())
 
     # 미등록 시 등록
     if (not user) and re.fullmatch(r"\s*\d+\s+\d+\s*", t):
-        g,c=map(int,t.split())
-        set_user(user_id,g,c)
+        g, c = map(int, t.split())
+        set_user(user_id, g, c)
         return kakao_simple_text(f"등록되었습니다: {g}학년 {c}반.\n이제 '오늘 시간표', '오늘 급식', '이번 주 학사일정' 등을 물어보세요.", qr_default())
 
     if not user:
@@ -269,30 +272,30 @@ async def webhook(request: Request, x_kakao_signature: str = Header(None)):
 
     # 기능 분기
     if "시간표" in t:
-        target=parse_korean_date(t) or (dt.datetime.utcnow()+dt.timedelta(hours=9)).date()
-        tt_text=fetch_timetable_text(user["grade"],user["class"],target)
+        target = parse_korean_date(t) or (dt.datetime.utcnow() + dt.timedelta(hours=9)).date()
+        tt_text = fetch_timetable_text(user["grade"], user["class"], target)
         return kakao_simple_text(f"{user['grade']}학년 {user['class']}반 {target.strftime('%m/%d(%a)')} 시간표\n{tt_text}", qr_default())
 
     if "급식" in t:
-        target=parse_korean_date(t) or (dt.datetime.utcnow()+dt.timedelta(hours=9)).date()
-        meal_text=fetch_meal_text(target)
+        target = parse_korean_date(t) or (dt.datetime.utcnow() + dt.timedelta(hours=9)).date()
+        meal_text = fetch_meal_text(target)
         return kakao_simple_text(f"{target.strftime('%Y-%m-%d')} 급식\n{meal_text}", qr_default())
 
     if "학사" in t or "일정" in t:
-        today = (dt.datetime.utcnow()+dt.timedelta(hours=9)).date()
+        today = (dt.datetime.utcnow() + dt.timedelta(hours=9)).date()
         if "이번 주" in t:
-            start,end=format_week_range(today)
-            items=fetch_calendar_items(start,end)
+            start, end = format_week_range(today)
+            items = fetch_calendar_items(start, end)
             if not items:
-                items=["이번 주 학사일정이 없습니다."]
-            return kakao_simple_text("이번 주 학사일정\n"+ "\n".join(items), qr_default())
+                items = ["이번 주 학사일정이 없습니다."]
+            return kakao_simple_text("이번 주 학사일정\n" + "\n".join(items), qr_default())
         month_start = today.replace(day=1)
-        next_month = (month_start.replace(day=28)+dt.timedelta(days=4)).replace(day=1)
+        next_month = (month_start.replace(day=28) + dt.timedelta(days=4)).replace(day=1)
         month_end = next_month - dt.timedelta(days=1)
-        items=fetch_calendar_items(month_start,month_end)
+        items = fetch_calendar_items(month_start, month_end)
         if not items:
-            items=["이번 달 학사일정이 없습니다."]
-        return kakao_simple_text("이번 달 학사일정\n"+ "\n".join(items), qr_default())
+            items = ["이번 달 학사일정이 없습니다."]
+        return kakao_simple_text("이번 달 학사일정\n" + "\n".join(items), qr_default())
 
     return kakao_simple_text(
         "무엇을 도와드릴까요?\n가능한 명령: `오늘 시간표`, `내일 시간표`, `오늘 급식`, `9월3일 급식`, `이번 주 학사일정`, `이번 달 학사일정`, `학년변경 2 8`",
