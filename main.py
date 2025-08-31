@@ -144,14 +144,11 @@ def fetch_timetable_text(grade: int, clas: int, target_date: dt.date) -> str:
 
         lines = []
         for i, subj in enumerate(day_list, start=1):
-            if not subj:
-                continue
             s = str(subj).strip()
-            if s in ("None", "-", "", "()", "( )"):
+            # 빈 교시(공백, None, '-')는 출력 안 함
+            if not s or s in ("None", "-", ""):
                 continue
-            s = re.sub(r"^\d+\s*교시[:\s-]*", "", s)  # 접두어 제거
-            if not s:
-                continue
+            s = re.sub(r"^\d+\s*교시[:\s-]*", "", s)  # 혹시 앞에 교시 붙어 있으면 제거
             lines.append(f"{i}교시: {s}")
 
         if not lines:
