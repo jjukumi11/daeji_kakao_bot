@@ -2,6 +2,7 @@ import os
 import re
 import sqlite3
 import datetime as dt
+import json
 from typing import Dict, List, Optional
 
 import requests
@@ -12,6 +13,7 @@ import uvicorn
 # ====== 환경설정 ======
 PORT = int(os.environ.get("PORT", 8000))
 DB_PATH = "users.db"
+SCHEDULE_JSON = "academic_schedule.json"  # OCR 변환된 학사일정 JSON
 
 # 컴시간알리미 (pycomcigan)
 try:
@@ -35,6 +37,7 @@ def init_db():
     conn.commit()
     conn.close()
 
+
 def get_user(kakao_id: str) -> Optional[Dict]:
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
@@ -45,6 +48,7 @@ def get_user(kakao_id: str) -> Optional[Dict]:
         return {"grade": row[0], "class": row[1]}
     return None
 
+
 def set_user(kakao_id: str, grade: int, clas: int) -> None:
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
@@ -54,6 +58,7 @@ def set_user(kakao_id: str, grade: int, clas: int) -> None:
     )
     conn.commit()
     conn.close()
+
 
 init_db()
 
@@ -66,6 +71,7 @@ def kakao_simple_text(text: str, quick_replies: Optional[List[Dict]] = None) -> 
     if quick_replies:
         payload["template"]["quickReplies"] = quick_replies
     return payload
+
 
 def qr_default() -> List[Dict]:
     return [
@@ -111,6 +117,7 @@ def parse_korean_date(text: str, base: Optional[dt.date] = None) -> Optional[dt.
 # ====== 시간표 (컴시간알리미) ======
 _COMCI_SCHOOL_NAME = "대지고등학교"
 
+
 def fetch_timetable_text(grade: int, clas: int, target_date: dt.date) -> str:
     weekday = target_date.weekday()
     if weekday >= 5:
@@ -155,8 +162,9 @@ def fetch_timetable_text(grade: int, clas: int, target_date: dt.date) -> str:
     except Exception as e:
         return f"시간표 불러오기 실패: {e}"
 
-# ====== 급식 (코리아차트 - 수정 버전) ======
+# ====== 급식 (코리아차트) ======
 _KC_SCHOOL_CODE = "B000012547"
+
 
 def fetch_meal_text(target_date: dt.date) -> str:
     yearmonth = target_date.strftime("%Y%m")
@@ -168,7 +176,6 @@ def fetch_meal_text(target_date: dt.date) -> str:
         r.raise_for_status()
         soup = BeautifulSoup(r.text, "html.parser")
 
-        # 날짜 (앞의 0 제거)
         target_day = str(int(target_date.strftime("%d")))
 
         meals = []
@@ -188,33 +195,27 @@ def fetch_meal_text(target_date: dt.date) -> str:
     except Exception as e:
         return f"급식 불러오기 실패: {e}"
 
-# ====== 학사일정 ======
-_SI_SCHOOL_IDF = "3515b280-22fd-4371-b105-999760a53e44"
-_SI_BASE = "https://www.schoolinfo.go.kr/ei/ss/Pneiss_b01_s0.do"
-
-def _get_schoolinfo_month_html(target_date: dt.date) -> str:
-    params = {"SHL_IDF_CD": _SI_SCHOOL_IDF}
-    r = requests.get(_SI_BASE, params=params, timeout=10)
-    r.raise_for_status()
-    return r.text
-
-def fetch_calendar_items(target_date_from: dt.date, target_date_to: dt.date) -> List[str]:
+# ====== 학사일정 (JSON 기반) ======
+def load_schedule() -> List[Dict]:
     try:
-        html = _get_schoolinfo_month_html(target_date_from)
-        text = BeautifulSoup(html, "lxml").get_text("\n", strip=True)
-        pattern = re.compile(r"(\d{2})\.\s*(\d{2})\s*[월화수목금토일]\s*-\s*([^\n\r]+)")
-        items = []
-        for m in pattern.finditer(text):
-            mm, dd, title = int(m.group(1)), int(m.group(2)), m.group(3).strip()
-            try:
-                d = dt.date(target_date_from.year, mm, dd)
-            except ValueError:
-                continue
-            if target_date_from <= d <= target_date_to:
-                items.append(f"{d.strftime('%m/%d(%a)')} - {title}")
-        return items
-    except Exception as e:
-        return [f"학사일정 불러오기 실패: {e}"]
+        with open(SCHEDULE_JSON, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return []
+
+
+def fetch_calendar_items(start: dt.date, end: dt.date) -> List[str]:
+    data = load_schedule()
+    items = []
+    for row in data:
+        try:
+            d = dt.datetime.strptime(row["date"], "%Y-%m-%d").date()
+            if start <= d <= end:
+                items.append(f"{d.strftime('%m/%d(%a)')} - {row['event']}")
+        except Exception:
+            continue
+    return items
+
 
 def format_week_range(day: dt.date) -> (dt.date, dt.date):
     start = day - dt.timedelta(days=day.weekday())
