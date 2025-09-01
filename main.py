@@ -35,6 +35,7 @@ def init_db():
     conn.commit()
     conn.close()
 
+
 def get_user(kakao_id: str) -> Optional[Dict]:
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
@@ -45,6 +46,7 @@ def get_user(kakao_id: str) -> Optional[Dict]:
         return {"grade": row[0], "class": row[1]}
     return None
 
+
 def set_user(kakao_id: str, grade: int, clas: int) -> None:
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
@@ -54,6 +56,7 @@ def set_user(kakao_id: str, grade: int, clas: int) -> None:
     )
     conn.commit()
     conn.close()
+
 
 init_db()
 
@@ -67,6 +70,7 @@ def kakao_simple_text(text: str, quick_replies: Optional[List[Dict]] = None) -> 
         payload["template"]["quickReplies"] = quick_replies
     return payload
 
+
 def qr_default() -> List[Dict]:
     return [
         {"action": "message", "label": "오늘 시간표", "messageText": "오늘 시간표"},
@@ -75,6 +79,7 @@ def qr_default() -> List[Dict]:
         {"action": "message", "label": "이번 주 학사일정", "messageText": "이번 주 학사일정"},
         {"action": "message", "label": "학년/반 변경", "messageText": "학년/반 변경"},
     ]
+
 
 # ====== 날짜 파싱 ======
 def parse_korean_date(text: str, base: Optional[dt.date] = None) -> Optional[dt.date]:
@@ -108,8 +113,10 @@ def parse_korean_date(text: str, base: Optional[dt.date] = None) -> Optional[dt.
             return None
     return None
 
+
 # ====== 시간표 (컴시간알리미) ======
 _COMCI_SCHOOL_NAME = "대지고등학교"
+
 
 def fetch_timetable_text(grade: int, clas: int, target_date: dt.date) -> str:
     weekday = target_date.weekday()
@@ -155,8 +162,10 @@ def fetch_timetable_text(grade: int, clas: int, target_date: dt.date) -> str:
     except Exception as e:
         return f"시간표 불러오기 실패: {e}"
 
-# ====== 급식 (코리아차트 크롤링 - 디버깅 로그 추가판) ======
+
+# ====== 급식 (코리아차트 크롤링 - 수정판) ======
 _KC_SCHOOL_CODE = "B000012547"
+
 
 def fetch_meal_text(target_date: dt.date) -> str:
     yyyymm = target_date.strftime("%Y%m")
@@ -167,53 +176,39 @@ def fetch_meal_text(target_date: dt.date) -> str:
         r.raise_for_status()
         soup = BeautifulSoup(r.text, "html.parser")
 
-        # === 디버깅: HTML 앞부분 강제 출력 ===
-        print("==== DEBUG: 급식 HTML 일부 ====")
-        print(soup.prettify()[:20000])
-        print("================================")
+        # 날짜는 일(day)만 들어 있음 (예: 1, 2, 3 …)
+        target_day = str(int(target_date.strftime("%d")))
 
-        table = soup.find("table")
-        if not table:
-            return "급식 테이블을 찾을 수 없습니다."
+        day_cell = soup.find("div", class_="day", string=target_day)
+        if not day_cell:
+            return f"{target_date.strftime('%Y-%m-%d')} 급식 정보가 없습니다."
 
-        rows = table.find_all("tr")
-        for row in rows:
-            cols = [c.get_text(strip=True) for c in row.find_all("td")]
-            if not cols:
-                continue
+        parent = day_cell.find_parent("div", class_="meal-day")
+        if not parent:
+            return f"{target_date.strftime('%Y-%m-%d')} 급식 정보가 없습니다."
 
-            date_text = cols[0]
-            meals = cols[1:]
+        meals = parent.find_all("div", class_="meal")
+        meal_texts = []
+        for m in meals:
+            meal_texts.append(m.get_text(" ", strip=True))
 
-            # 날짜 매칭 (여러 포맷 허용)
-            formats = [
-                target_date.strftime("%Y-%m-%d"),
-                target_date.strftime("%Y.%m.%d"),
-                target_date.strftime("%Y/%m/%d"),
-                target_date.strftime("%m-%d"),
-                target_date.strftime("%m/%d"),
-                target_date.strftime("%d"),
-            ]
-            if any(f in date_text for f in formats):
-                meal_text = " / ".join([m for m in meals if m])
-                return meal_text if meal_text else "급식 정보가 없습니다."
-
-        # 못 찾았을 경우
-        print("급식 페이지 구조 변경? HTML 앞부분:", soup.prettify()[:500])
-        return f"{target_date.strftime('%Y-%m-%d')} 급식 정보가 없습니다."
+        return "\n".join(meal_texts) if meal_texts else "급식 정보가 없습니다."
 
     except Exception as e:
         return f"급식 불러오기 실패: {e}"
 
+
 # ====== 학사일정 ======
 _SI_SCHOOL_IDF = "3515b280-22fd-4371-b105-999760a53e44"
 _SI_BASE = "https://www.schoolinfo.go.kr/ei/ss/Pneiss_b01_s0.do"
+
 
 def _get_schoolinfo_month_html(target_date: dt.date) -> str:
     params = {"SHL_IDF_CD": _SI_SCHOOL_IDF}
     r = requests.get(_SI_BASE, params=params, timeout=10)
     r.raise_for_status()
     return r.text
+
 
 def fetch_calendar_items(target_date_from: dt.date, target_date_to: dt.date) -> List[str]:
     try:
@@ -233,10 +228,12 @@ def fetch_calendar_items(target_date_from: dt.date, target_date_to: dt.date) -> 
     except Exception as e:
         return [f"학사일정 불러오기 실패: {e}"]
 
+
 def format_week_range(day: dt.date) -> (dt.date, dt.date):
     start = day - dt.timedelta(days=day.weekday())
     end = start + dt.timedelta(days=6)
     return start, end
+
 
 # ====== 웹훅 ======
 @app.post("/webhook")
@@ -303,8 +300,9 @@ async def webhook(request: Request, x_kakao_signature: str = Header(None)):
 
     return kakao_simple_text(
         "무엇을 도와드릴까요?\n가능한 명령: `오늘 시간표`, `내일 시간표`, `오늘 급식`, `9월3일 급식`, `이번 주 학사일정`, `이번 달 학사일정`, `학년/반 변경`",
-        qr_default()
+        qr_default(),
     )
+
 
 # ====== 로컬 실행 ======
 if __name__ == "__main__":
