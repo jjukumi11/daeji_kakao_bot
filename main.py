@@ -177,18 +177,16 @@ def fetch_meal_text(target_date: dt.date) -> str:
         r.raise_for_status()
         soup = BeautifulSoup(r.text, "html.parser")
 
-        # 오늘 날짜 (ex: "1")
         target_day = str(int(target_date.strftime("%d")))
 
         meals = []
-        # 테이블 기반 탐색
-        for td in soup.select("table tbody td"):
-            day_span = td.select_one("span.meal-day")
-            if not day_span:
+        for box in soup.select("div.meal-day"):
+            date_tag = box.select_one("div.date")
+            if not date_tag:
                 continue
-            if day_span.get_text(strip=True).replace("일", "") == target_day:
-                for meal_div in td.select("div.meal-item"):
-                    meals.append(meal_div.get_text(" ", strip=True))
+            if date_tag.get_text(strip=True).replace("일", "") == target_day:
+                for item in box.select("div.meal-item"):
+                    meals.append(item.get_text(" ", strip=True))
 
         if meals:
             return "\n".join(meals)
