@@ -177,6 +177,14 @@ def fetch_meal_text(target_date: dt.date) -> str:
         r.raise_for_status()
         soup = BeautifulSoup(r.text, "html.parser")
 
+        # ==== 🔽 HTML 저장 (방법3) 추가 부분 ====
+        try:
+            with open("meal_sample.html", "w", encoding="utf-8") as f:
+                f.write(r.text)
+        except Exception as save_err:
+            print("HTML 저장 실패:", save_err)
+        # =======================================
+
         target_day = str(int(target_date.strftime("%d")))
 
         meals = []
