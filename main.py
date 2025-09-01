@@ -155,7 +155,7 @@ def fetch_timetable_text(grade: int, clas: int, target_date: dt.date) -> str:
     except Exception as e:
         return f"시간표 불러오기 실패: {e}"
 
-# ====== 급식 (코리아차트 크롤링 - 최신 수정판) ======
+# ====== 급식 (코리아차트 크롤링 - 디버깅 로그 추가판) ======
 _KC_SCHOOL_CODE = "B000012547"
 
 def fetch_meal_text(target_date: dt.date) -> str:
@@ -166,6 +166,11 @@ def fetch_meal_text(target_date: dt.date) -> str:
         r = requests.get(url, timeout=10)
         r.raise_for_status()
         soup = BeautifulSoup(r.text, "html.parser")
+
+        # === 디버깅: HTML 앞부분 강제 출력 ===
+        print("==== DEBUG: 급식 HTML 일부 ====")
+        print(soup.prettify()[:1000])
+        print("================================")
 
         table = soup.find("table")
         if not table:
@@ -193,7 +198,7 @@ def fetch_meal_text(target_date: dt.date) -> str:
                 meal_text = " / ".join([m for m in meals if m])
                 return meal_text if meal_text else "급식 정보가 없습니다."
 
-        # 못 찾았을 경우 → HTML 앞부분 출력
+        # 못 찾았을 경우
         print("급식 페이지 구조 변경? HTML 앞부분:", soup.prettify()[:500])
         return f"{target_date.strftime('%Y-%m-%d')} 급식 정보가 없습니다."
 
