@@ -163,7 +163,7 @@ def fetch_timetable_text(grade: int, clas: int, target_date: dt.date) -> str:
         return f"시간표 불러오기 실패: {e}"
 
 
-# ====== 급식 (코리아차트 크롤링 - 최신 구조 반영) ======
+# ====== 급식 (코리아차트 크롤링 + 로컬 저장) ======
 _KC_SCHOOL_CODE = "B000012547"
 
 
@@ -171,20 +171,22 @@ def fetch_meal_text(target_date: dt.date) -> str:
     yyyymm = target_date.strftime("%Y%m")
     url = f"https://school.koreacharts.com/school/meals/{_KC_SCHOOL_CODE}/{yyyymm}.html"
 
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+    local_file = os.path.join(BASE_DIR, "meal_sample.html")
+
     try:
-        headers = {"User-Agent": "Mozilla/5.0"}
-        r = requests.get(url, headers=headers, timeout=10)
-        r.raise_for_status()
-        soup = BeautifulSoup(r.text, "html.parser")
+        if os.path.exists(local_file):
+            with open(local_file, "r", encoding="utf-8") as f:
+                html = f.read()
+        else:
+            headers = {"User-Agent": "Mozilla/5.0"}
+            r = requests.get(url, headers=headers, timeout=10)
+            r.raise_for_status()
+            html = r.text
+            with open(local_file, "w", encoding="utf-8") as f:
+                f.write(html)
 
-        # ==== 🔽 HTML 저장 (방법3) 추가 부분 ====
-        try:
-            with open("meal_sample.html", "w", encoding="utf-8") as f:
-                f.write(r.text)
-        except Exception as save_err:
-            print("HTML 저장 실패:", save_err)
-        # =======================================
-
+        soup = BeautifulSoup(html, "html.parser")
         target_day = str(int(target_date.strftime("%d")))
 
         meals = []
