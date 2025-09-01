@@ -163,7 +163,7 @@ def fetch_timetable_text(grade: int, clas: int, target_date: dt.date) -> str:
         return f"시간표 불러오기 실패: {e}"
 
 
-# ====== 급식 (코리아차트 크롤링 - 수정판) ======
+# ====== 급식 (코리아차트 크롤링 - 최신 구조 반영) ======
 _KC_SCHOOL_CODE = "B000012547"
 
 
@@ -181,13 +181,14 @@ def fetch_meal_text(target_date: dt.date) -> str:
         target_day = str(int(target_date.strftime("%d")))
 
         meals = []
-        for box in soup.select("div.meal-day"):
-            date_tag = box.select_one("div.meal-date")
-            if not date_tag:
+        # 테이블 기반 탐색
+        for td in soup.select("table tbody td"):
+            day_span = td.select_one("span.meal-day")
+            if not day_span:
                 continue
-            if date_tag.get_text(strip=True).replace("일", "") == target_day:
-                for item in box.select("div.meal-item"):
-                    meals.append(item.get_text(" ", strip=True))
+            if day_span.get_text(strip=True).replace("일", "") == target_day:
+                for meal_div in td.select("div.meal-item"):
+                    meals.append(meal_div.get_text(" ", strip=True))
 
         if meals:
             return "\n".join(meals)
