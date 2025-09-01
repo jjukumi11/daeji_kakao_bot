@@ -163,7 +163,7 @@ def fetch_timetable_text(grade: int, clas: int, target_date: dt.date) -> str:
         return f"시간표 불러오기 실패: {e}"
 
 
-# ====== 급식 (코리아차트 크롤링 - 수정판) ======
+# ====== 급식 (코리아차트 크롤링 - 디버깅 추가판) ======
 _KC_SCHOOL_CODE = "B000012547"
 
 
@@ -175,6 +175,11 @@ def fetch_meal_text(target_date: dt.date) -> str:
         r = requests.get(url, timeout=10)
         r.raise_for_status()
         soup = BeautifulSoup(r.text, "html.parser")
+
+        # ✅ HTML 구조 확인용 출력 (앞부분 2000자만)
+        print("=== DEBUG: 급식 페이지 HTML 미리보기 ===")
+        print(soup.prettify()[:2000])
+        print("=== DEBUG END ===")
 
         # 날짜는 일(day)만 들어 있음 (예: 1, 2, 3 …)
         target_day = str(int(target_date.strftime("%d")))
