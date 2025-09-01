@@ -1,4 +1,3 @@
-# main.py
 import os
 import re
 import sqlite3
@@ -145,10 +144,9 @@ def fetch_timetable_text(grade: int, clas: int, target_date: dt.date) -> str:
         lines = []
         for i, subj in enumerate(day_list, start=1):
             s = str(subj).strip()
-            # 빈 교시(공백, None, '-', '()', '빈')는 출력 안 함
             if not s or s in ("None", "-", "", "()", "빈"):
                 continue
-            s = re.sub(r"^\d+\s*교시[:\s-]*", "", s)  # 혹시 앞에 교시 붙어 있으면 제거
+            s = re.sub(r"^\d+\s*교시[:\s-]*", "", s)
             lines.append(f"{i}교시: {s}")
 
         if not lines:
@@ -157,7 +155,7 @@ def fetch_timetable_text(grade: int, clas: int, target_date: dt.date) -> str:
     except Exception as e:
         return f"시간표 불러오기 실패: {e}"
 
-# ====== 급식 ======
+# ====== 급식 (코리아차트 크롤링 - 수정판) ======
 _KC_SCHOOL_CODE = "B000012547"
 
 def fetch_meal_text(target_date: dt.date) -> str:
@@ -167,36 +165,32 @@ def fetch_meal_text(target_date: dt.date) -> str:
     try:
         r = requests.get(url, timeout=10)
         r.raise_for_status()
-        soup = BeautifulSoup(r.text, "lxml")
-        table = soup.find("table")
-        if not table:
-            return "급식 정보를 찾을 수 없습니다."
+        soup = BeautifulSoup(r.text, "html.parser")
 
-        rows = table.find_all("tr")
-        data = {}
-        for tr in rows[1:]:
-            tds = [td.get_text(" ", strip=True) for td in tr.find_all(["td","th"])]
-            if len(tds) < 3:
+        rows = soup.find_all("tr")
+        for row in rows:
+            cols = row.find_all("td")
+            if not cols:
                 continue
-            date_txt, _, menu_txt = tds[0], tds[1], tds[2]
-            d = None
-            m = re.search(r"(\d{4})[./-](\d{1,2})[./-](\d{1,2})", date_txt)
-            if m:
-                y, mth, dday = int(m.group(1)), int(m.group(2)), int(m.group(3))
-                d = dt.date(y, mth, dday)
-            else:
-                m = re.search(r"(\d{1,2})[./-](\d{1,2})", date_txt)
-                if m:
-                    y = target_date.year
-                    mth, dday = int(m.group(1)), int(m.group(2))
-                    d = dt.date(y, mth, dday)
-            if d:
-                data[d] = menu_txt.replace("\\n", "\n")
-        menu = data.get(target_date)
-        if not menu:
-            return "해당 날짜의 급식 정보가 없습니다."
-        lines = [line.strip(" ・-·•") for line in re.split(r"[\n;]", menu) if line.strip()]
-        return "\n".join(lines)
+
+            date_text = cols[0].get_text(strip=True)
+            meal_text = " / ".join([c.get_text(strip=True) for c in cols[1:]])
+
+            # 날짜 형식 여러가지 허용
+            formats = [
+                target_date.strftime("%Y-%m-%d"),
+                target_date.strftime("%Y.%m.%d"),
+                target_date.strftime("%m-%d"),
+                target_date.strftime("%m/%d"),
+                target_date.strftime("%Y/%m/%d"),
+            ]
+            if any(f in date_text for f in formats):
+                return meal_text if meal_text else "급식 정보가 없습니다."
+
+        # 매칭 실패 → 디버깅 로그 출력
+        print("급식 페이지 구조 변경? HTML 앞부분:", soup.prettify()[:500])
+        return f"{target_date.strftime('%Y-%m-%d')} 급식 정보가 없습니다."
+
     except Exception as e:
         return f"급식 불러오기 실패: {e}"
 
@@ -253,11 +247,9 @@ async def webhook(request: Request, x_kakao_signature: str = Header(None)):
     user = get_user(user_id)
     t = text
 
-    # 학년/반 변경 요청
     if t.startswith("학년/반 변경"):
         return kakao_simple_text("변경할 학년과 반을 입력해주세요. 예: 2 8 또는 2학년 8반")
 
-    # 학년/반 입력 (예: "2 8" 또는 "2학년 8반")
     m = re.match(r"(\d+)\s*학년\s*(\d+)반", t)
     if m:
         g, c = int(m.group(1)), int(m.group(2))
@@ -269,11 +261,9 @@ async def webhook(request: Request, x_kakao_signature: str = Header(None)):
         set_user(user_id, g, c)
         return kakao_simple_text(f"학년/반을 {g}학년 {c}반으로 설정했습니다.", qr_default())
 
-    # 미등록 사용자 안내
     if not user:
         return kakao_simple_text("안녕하세요! 사용하실 학년과 반을 입력해주세요. 예: 2 8 또는 2학년 8반", qr_default())
 
-    # 기능 분기
     if "시간표" in t:
         target = parse_korean_date(t) or (dt.datetime.utcnow() + dt.timedelta(hours=9)).date()
         tt_text = fetch_timetable_text(user["grade"], user["class"], target)
