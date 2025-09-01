@@ -169,7 +169,7 @@ def fetch_meal_text(target_date: dt.date) -> str:
 
         # === 디버깅: HTML 앞부분 강제 출력 ===
         print("==== DEBUG: 급식 HTML 일부 ====")
-        print(soup.prettify()[:5000])
+        print(soup.prettify()[:20000])
         print("================================")
 
         table = soup.find("table")
