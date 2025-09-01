@@ -163,41 +163,36 @@ def fetch_timetable_text(grade: int, clas: int, target_date: dt.date) -> str:
         return f"시간표 불러오기 실패: {e}"
 
 
-# ====== 급식 (코리아차트 크롤링 - 디버깅 추가판) ======
+# ====== 급식 (코리아차트 크롤링 - 수정판) ======
 _KC_SCHOOL_CODE = "B000012547"
 
 
 def fetch_meal_text(target_date: dt.date) -> str:
     yyyymm = target_date.strftime("%Y%m")
-    url = f"https://school.koreacharts.com/school/meals/{_KC_SCHOOL_CODE}/{yyyymm}"
+    url = f"https://school.koreacharts.com/school/meals/{_KC_SCHOOL_CODE}/{yyyymm}.html"
 
     try:
-        r = requests.get(url, timeout=10)
+        headers = {"User-Agent": "Mozilla/5.0"}
+        r = requests.get(url, headers=headers, timeout=10)
         r.raise_for_status()
         soup = BeautifulSoup(r.text, "html.parser")
 
-        # ✅ HTML 구조 확인용 출력 (앞부분 2000자만)
-        print("=== DEBUG: 급식 페이지 HTML 미리보기 ===")
-        print(soup.prettify()[:2000])
-        print("=== DEBUG END ===")
-
-        # 날짜는 일(day)만 들어 있음 (예: 1, 2, 3 …)
+        # 오늘 날짜 (ex: "1")
         target_day = str(int(target_date.strftime("%d")))
 
-        day_cell = soup.find("div", class_="day", string=target_day)
-        if not day_cell:
+        meals = []
+        for box in soup.select("div.meal-day"):
+            date_tag = box.select_one("div.meal-date")
+            if not date_tag:
+                continue
+            if date_tag.get_text(strip=True).replace("일", "") == target_day:
+                for item in box.select("div.meal-item"):
+                    meals.append(item.get_text(" ", strip=True))
+
+        if meals:
+            return "\n".join(meals)
+        else:
             return f"{target_date.strftime('%Y-%m-%d')} 급식 정보가 없습니다."
-
-        parent = day_cell.find_parent("div", class_="meal-day")
-        if not parent:
-            return f"{target_date.strftime('%Y-%m-%d')} 급식 정보가 없습니다."
-
-        meals = parent.find_all("div", class_="meal")
-        meal_texts = []
-        for m in meals:
-            meal_texts.append(m.get_text(" ", strip=True))
-
-        return "\n".join(meal_texts) if meal_texts else "급식 정보가 없습니다."
 
     except Exception as e:
         return f"급식 불러오기 실패: {e}"
