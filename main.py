@@ -155,43 +155,47 @@ def fetch_timetable_text(grade: int, clas: int, target_date: dt.date) -> str:
     except Exception as e:
         return f"시간표 불러오기 실패: {e}"
 
-# ====== 급식 (코리아차트 크롤링 - 안정화 버전) ======
+# ====== 급식 (코리아차트 크롤링 - 최신 수정판) ======
 _KC_SCHOOL_CODE = "B000012547"
 
 def fetch_meal_text(target_date: dt.date) -> str:
-    yearmonth = target_date.strftime("%Y%m")
-    url = f"https://school.koreacharts.com/school/meals/{_KC_SCHOOL_CODE}/{yearmonth}"
+    yyyymm = target_date.strftime("%Y%m")
+    url = f"https://school.koreacharts.com/school/meals/{_KC_SCHOOL_CODE}/{yyyymm}"
 
     try:
         r = requests.get(url, timeout=10)
         r.raise_for_status()
         soup = BeautifulSoup(r.text, "html.parser")
 
-        # 날짜 (일 단위, 1~31)
-        day = str(int(target_date.strftime("%d")))
+        table = soup.find("table")
+        if not table:
+            return "급식 테이블을 찾을 수 없습니다."
 
-        cell = soup.select_one(f"td[data-day='{day}']")
-        if not cell:
-            return f"{target_date.strftime('%Y-%m-%d')} 급식 정보가 없습니다."
+        rows = table.find_all("tr")
+        for row in rows:
+            cols = [c.get_text(strip=True) for c in row.find_all("td")]
+            if not cols:
+                continue
 
-        meal_area = cell.select_one(".meal")
-        if not meal_area:
-            return f"{target_date.strftime('%Y-%m-%d')} 급식 정보가 없습니다."
+            date_text = cols[0]
+            meals = cols[1:]
 
-        items = []
-        for li in meal_area.select("li"):
-            text = li.get_text(strip=True)
-            if text:
-                items.append(text)
+            # 날짜 매칭 (여러 포맷 허용)
+            formats = [
+                target_date.strftime("%Y-%m-%d"),
+                target_date.strftime("%Y.%m.%d"),
+                target_date.strftime("%Y/%m/%d"),
+                target_date.strftime("%m-%d"),
+                target_date.strftime("%m/%d"),
+                target_date.strftime("%d"),
+            ]
+            if any(f in date_text for f in formats):
+                meal_text = " / ".join([m for m in meals if m])
+                return meal_text if meal_text else "급식 정보가 없습니다."
 
-        if not items:
-            raw_text = meal_area.get_text("\n", strip=True)
-            items = [line.strip() for line in raw_text.split("\n") if line.strip()]
-
-        if not items:
-            return f"{target_date.strftime('%Y-%m-%d')} 급식 정보가 없습니다."
-
-        return "\n".join(items)
+        # 못 찾았을 경우 → HTML 앞부분 출력
+        print("급식 페이지 구조 변경? HTML 앞부분:", soup.prettify()[:500])
+        return f"{target_date.strftime('%Y-%m-%d')} 급식 정보가 없습니다."
 
     except Exception as e:
         return f"급식 불러오기 실패: {e}"
