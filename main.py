@@ -412,7 +412,11 @@ async def webhook(request: Request, x_kakao_signature: str = Header(None)):
 # ====== 로컬 실행 ======
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=PORT)
-    
+
 @app.get("/")
 async def root():
+    return {"status": "ok"}
+
+@app.head("/")
+async def root_head():
     return {"status": "ok"}
