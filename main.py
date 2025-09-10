@@ -4,7 +4,7 @@ import sqlite3
 import datetime as dt
 from typing import Dict, List, Optional
 
-import requests
+import httpx
 from bs4 import BeautifulSoup
 from fastapi import FastAPI, Request, Header
 import uvicorn
@@ -21,41 +21,34 @@ except Exception:
 
 app = FastAPI()
 
-# ====== DB ======
+# ====== DB 초기화 ======
 def init_db():
-    conn = sqlite3.connect(DB_PATH)
-    cur = conn.cursor()
-    cur.execute("""
-    CREATE TABLE IF NOT EXISTS users (
-        kakao_id TEXT PRIMARY KEY,
-        grade INTEGER,
-        class INTEGER
-    )
-    """)
-    conn.commit()
-    conn.close()
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            kakao_id TEXT PRIMARY KEY,
+            grade INTEGER,
+            class INTEGER
+        )
+        """)
+init_db()
 
 def get_user(kakao_id: str) -> Optional[Dict]:
-    conn = sqlite3.connect(DB_PATH)
-    cur = conn.cursor()
-    cur.execute("SELECT grade, class FROM users WHERE kakao_id=?", (kakao_id,))
-    row = cur.fetchone()
-    conn.close()
-    if row:
-        return {"grade": row[0], "class": row[1]}
+    with sqlite3.connect(DB_PATH) as conn:
+        row = conn.execute(
+            "SELECT grade, class FROM users WHERE kakao_id=?",
+            (kakao_id,)
+        ).fetchone()
+        if row:
+            return {"grade": row[0], "class": row[1]}
     return None
 
 def set_user(kakao_id: str, grade: int, clas: int) -> None:
-    conn = sqlite3.connect(DB_PATH)
-    cur = conn.cursor()
-    cur.execute(
-        "INSERT OR REPLACE INTO users (kakao_id, grade, class) VALUES (?, ?, ?)",
-        (kakao_id, grade, clas),
-    )
-    conn.commit()
-    conn.close()
-
-init_db()
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute(
+            "INSERT OR REPLACE INTO users (kakao_id, grade, class) VALUES (?, ?, ?)",
+            (kakao_id, grade, clas)
+        )
 
 # ====== Kakao 응답 유틸 ======
 def kakao_simple_text(text: str, quick_replies: Optional[List[Dict]] = None) -> Dict:
@@ -80,8 +73,7 @@ def qr_default() -> List[Dict]:
 # ====== 날짜 파싱 ======
 def parse_korean_date(text: str, base: Optional[dt.date] = None) -> Optional[dt.date]:
     if base is None:
-        kst_now = dt.datetime.utcnow() + dt.timedelta(hours=9)
-        base = kst_now.date()
+        base = (dt.datetime.utcnow() + dt.timedelta(hours=9)).date()
 
     t = text.strip()
     if "오늘" in t:
@@ -89,24 +81,21 @@ def parse_korean_date(text: str, base: Optional[dt.date] = None) -> Optional[dt.
     if "내일" in t:
         return base + dt.timedelta(days=1)
 
-    m = re.search(r"(\d{1,2})\s*월\s*(\d{1,2})\s*일", t)
-    if m:
-        try:
-            return dt.date(base.year, int(m.group(1)), int(m.group(2)))
-        except ValueError:
-            return None
-    m = re.search(r"\b(\d{1,2})[./-](\d{1,2})\b", t)
-    if m:
-        try:
-            return dt.date(base.year, int(m.group(1)), int(m.group(2)))
-        except ValueError:
-            return None
-    m = re.search(r"\b(20\d{2})[./-](\d{1,2})[./-](\d{1,2})\b", t)
-    if m:
-        try:
-            return dt.date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
-        except ValueError:
-            return None
+    patterns = [
+        r"(\d{1,2})\s*월\s*(\d{1,2})\s*일",
+        r"\b(\d{1,2})[./-](\d{1,2})\b",
+        r"\b(20\d{2})[./-](\d{1,2})[./-](\d{1,2})\b",
+    ]
+    for pat in patterns:
+        m = re.search(pat, t)
+        if m:
+            try:
+                if len(m.groups()) == 2:
+                    return dt.date(base.year, int(m.group(1)), int(m.group(2)))
+                elif len(m.groups()) == 3:
+                    return dt.date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
+            except ValueError:
+                return None
     return None
 
 # ====== 시간표 (컴시간알리미) ======
@@ -124,72 +113,53 @@ def fetch_timetable_text(grade: int, clas: int, target_date: dt.date) -> str:
 
     try:
         tt = TimeTable(_COMCI_SCHOOL_NAME, week_num=week_num)
-        weekday_map = {
-            0: getattr(tt, "MONDAY", 0),
-            1: getattr(tt, "TUESDAY", 1),
-            2: getattr(tt, "WEDNESDAY", 2),
-            3: getattr(tt, "THURSDAY", 3),
-            4: getattr(tt, "FRIDAY", 4),
-        }
-        day_idx = weekday_map[weekday]
-
-        g, c = int(grade), int(clas)
+        day_idx = weekday  # 월~금: 0~4
         try:
-            day_list = tt.timetable[g][c][day_idx]
-        except Exception:
-            day_list = tt.timetable[g - 1][c - 1][day_idx]
+            day_list = tt.timetable[grade-1][clas-1][day_idx]
+        except IndexError:
+            return "해당 학년/반 시간표가 없습니다."
 
         if not day_list:
-            return "해당 학년/반 시간표가 없습니다."
+            return "해당 날짜에 수업이 없습니다."
 
         lines = []
         for i, subj in enumerate(day_list, start=1):
             s = str(subj).strip()
-            if not s or s in ("None", "-", "", "()", "빈"):
-                continue
-            s = re.sub(r"^\d+\s*교시[:\s-]*", "", s)
-            lines.append(f"{i}교시: {s}")
+            if s and s not in ("None", "-", "", "()", "빈"):
+                s = re.sub(r"^\d+\s*교시[:\s-]*", "", s)
+                lines.append(f"{i}교시: {s}")
 
-        if not lines:
-            return "해당 날짜에 수업이 없습니다."
-        return "\n".join(lines)
+        return "\n".join(lines) if lines else "해당 날짜에 수업이 없습니다."
+
     except Exception as e:
         return f"시간표 불러오기 실패: {e}"
 
 # ====== 급식 (코리아차트) ======
 _KC_SCHOOL_CODE = "B000012547"
 
-def fetch_meal_text(target_date: dt.date) -> str:
+async def fetch_meal_text(target_date: dt.date) -> str:
     yearmonth = target_date.strftime("%Y%m")
     url = f"https://school.koreacharts.com/school/meals/{_KC_SCHOOL_CODE}/{yearmonth}.html"
 
     try:
-        headers = {"User-Agent": "Mozilla/5.0"}
-        r = requests.get(url, headers=headers, timeout=10)
-        r.raise_for_status()
+        async with httpx.AsyncClient(timeout=10) as client:
+            r = await client.get(url, headers={"User-Agent": "Mozilla/5.0"})
+            r.raise_for_status()
         soup = BeautifulSoup(r.text, "html.parser")
 
         target_day = str(int(target_date.strftime("%d")))
-
-        meals = []
         for row in soup.select("tr"):
             cols = row.find_all("td", class_="text-center")
-            if len(cols) >= 3:
-                day = cols[0].get_text(strip=True)
-                if day == target_day:
-                    menu_text = cols[2].get_text(" ", strip=True)
-                    meals.append(menu_text)
+            if len(cols) >= 3 and cols[0].get_text(strip=True) == target_day:
+                menu_text = cols[2].get_text(" ", strip=True)
+                return f"{target_date.strftime('%Y-%m-%d')} 급식\n{menu_text}"
 
-        if meals:
-            return "\n".join(meals)
-        else:
-            return f"{target_date.strftime('%Y-%m-%d')} 급식 정보가 없습니다."
+        return f"{target_date.strftime('%Y-%m-%d')} 급식 정보가 없습니다."
 
     except Exception as e:
         return f"급식 불러오기 실패: {e}"
 
-# ====== 학사일정 (코드 내장) ======
-# 👉 필요한 내용은 직접 event에 기입/수정 가능
+# ====== 학사일정 ======
 ACADEMIC_SCHEDULE: List[Dict[str, str]] = [
     {"date": "2025-09-01", "event": "학부모 상담주간(3)"},
     {"date": "2025-09-02", "event": ""},
@@ -324,15 +294,8 @@ def fetch_calendar_items(start: dt.date, end: dt.date) -> List[str]:
             continue
         if start <= d <= end:
             title = (row.get("event") or "").strip()
-            # 빈 칸일 경우도 그대로 둠 (요청사항)
-            display = f"{d.strftime('%m/%d(%a)')} - {title}" if title else f"{d.strftime('%m/%d(%a)')} - "
-            items.append(display)
-    # 시작~끝 사이 날짜가 리스트에 아예 없으면 “없음” 메시지
-    if not items:
-        return []
-    # 날짜순 정렬 보장
-    items.sort(key=lambda s: dt.datetime.strptime(s.split(" - ")[0], "%m/%d(%a)"))
-    return items
+            items.append(f"{d.strftime('%m/%d(%a)')} - {title}" if title else f"{d.strftime('%m/%d(%a)')} - ")
+    return sorted(items, key=lambda s: dt.datetime.strptime(s.split(" - ")[0], "%m/%d(%a)"))
 
 def format_week_range(day: dt.date) -> (dt.date, dt.date):
     start = day - dt.timedelta(days=day.weekday())
@@ -343,76 +306,65 @@ def format_week_range(day: dt.date) -> (dt.date, dt.date):
 @app.post("/webhook")
 async def webhook(request: Request, x_kakao_signature: str = Header(None)):
     body = await request.json()
-    print("Received:", body)
-
-    user_id = None
-    text = ""
-    try:
-        user_id = body.get("userRequest", {}).get("user", {}).get("id")
-        text = body.get("userRequest", {}).get("utterance", "").strip()
-    except Exception:
-        return kakao_simple_text("요청 파싱 실패", qr_default())
+    user_id = body.get("userRequest", {}).get("user", {}).get("id")
+    text = body.get("userRequest", {}).get("utterance", "").strip()
 
     if not user_id:
         return kakao_simple_text("사용자 ID를 확인할 수 없습니다.", qr_default())
 
+    # TODO: x_kakao_signature 검증 필요
     user = get_user(user_id)
-    t = text
 
-    if t.startswith("학년/반 변경"):
-        return kakao_simple_text("변경할 학년과 반을 입력해주세요. 예: 2 8 또는 2학년 8반")
+    if text.startswith("학년/반 변경"):
+        return kakao_simple_text("변경할 학년과 반을 입력해주세요. 예: 2 8 또는 2학년 8반", qr_default())
 
-    m = re.match(r"(\d+)\s*학년\s*(\d+)반", t)
+    m = re.match(r"(\d+)\s*학년\s*(\d+)반", text)
     if m:
         g, c = int(m.group(1)), int(m.group(2))
         set_user(user_id, g, c)
         return kakao_simple_text(f"학년/반을 {g}학년 {c}반으로 설정했습니다.", qr_default())
 
-    if re.fullmatch(r"\d+\s+\d+", t):
-        g, c = map(int, t.split())
+    if re.fullmatch(r"\d+\s+\d+", text):
+        g, c = map(int, text.split())
         set_user(user_id, g, c)
         return kakao_simple_text(f"학년/반을 {g}학년 {c}반으로 설정했습니다.", qr_default())
 
     if not user:
         return kakao_simple_text("안녕하세요! 사용하실 학년과 반을 입력해주세요. 예: 2 8 또는 2학년 8반", qr_default())
 
-    if "시간표" in t:
-        target = parse_korean_date(t) or (dt.datetime.utcnow() + dt.timedelta(hours=9)).date()
+    # 시간표
+    if "시간표" in text:
+        target = parse_korean_date(text) or (dt.datetime.utcnow() + dt.timedelta(hours=9)).date()
         tt_text = fetch_timetable_text(user["grade"], user["class"], target)
         return kakao_simple_text(f"{user['grade']}학년 {user['class']}반 {target.strftime('%m/%d(%a)')} 시간표\n{tt_text}", qr_default())
 
-    if "급식" in t:
-        target = parse_korean_date(t) or (dt.datetime.utcnow() + dt.timedelta(hours=9)).date()
-        meal_text = fetch_meal_text(target)
-        return kakao_simple_text(f"{target.strftime('%Y-%m-%d')} 급식\n{meal_text}", qr_default())
+    # 급식
+    if "급식" in text:
+        target = parse_korean_date(text) or (dt.datetime.utcnow() + dt.timedelta(hours=9)).date()
+        meal_text = await fetch_meal_text(target)
+        return kakao_simple_text(meal_text, qr_default())
 
-    if "학사" in t or "일정" in t:
+    # 학사일정
+    if "학사" in text or "일정" in text:
         today = (dt.datetime.utcnow() + dt.timedelta(hours=9)).date()
-        if "이번 주" in t:
+        if "이번 주" in text:
             start, end = format_week_range(today)
             items = fetch_calendar_items(start, end)
-            if not items:
-                return kakao_simple_text("이번 주 학사일정이 없습니다.", qr_default())
-            return kakao_simple_text("이번 주 학사일정\n" + "\n".join(items), qr_default())
+            return kakao_simple_text("이번 주 학사일정\n" + ("\n".join(items) if items else "없음"), qr_default())
 
         # 기본: 이번 달
         month_start = today.replace(day=1)
         next_month = (month_start.replace(day=28) + dt.timedelta(days=4)).replace(day=1)
         month_end = next_month - dt.timedelta(days=1)
         items = fetch_calendar_items(month_start, month_end)
-        if not items:
-            return kakao_simple_text("이번 달 학사일정이 없습니다.", qr_default())
-        return kakao_simple_text("이번 달 학사일정\n" + "\n".join(items), qr_default())
+        return kakao_simple_text("이번 달 학사일정\n" + ("\n".join(items) if items else "없음"), qr_default())
 
     return kakao_simple_text(
         "무엇을 도와드릴까요?\n가능한 명령: `오늘 시간표`, `내일 시간표`, `오늘 급식`, `9월3일 급식`, `이번 주 학사일정`, `이번 달 학사일정`, `학년/반 변경`",
         qr_default()
     )
 
-# ====== 로컬 실행 ======
-if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=PORT)
-
+# ====== 로컬 실행/헬스체크 ======
 @app.get("/")
 async def root():
     return {"status": "ok"}
@@ -420,3 +372,6 @@ async def root():
 @app.head("/")
 async def root_head():
     return {"status": "ok"}
+
+if __name__ == "__main__":
+    uvicorn.run(app, host="0.0.0.0", port=PORT)
