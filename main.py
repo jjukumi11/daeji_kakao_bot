@@ -173,7 +173,7 @@ def fetch_meal_text(target_date: dt.date) -> str:
         print(f"[DEBUG] 요청 URL: {url}")
 
         # 반드시 이 줄이 있어야 합니다:
-        r = requests.get(url, headers=headers, timeout=10, verify=certifi.where())
+        r = requests.get(url, headers=headers, timeout=10, verify=True)
 
         print(f"[DEBUG] HTTP 상태코드: {getattr(r, 'status_code', 'NO_RESPONSE')}")
         r.raise_for_status()
@@ -212,11 +212,6 @@ def fetch_meal_text(target_date: dt.date) -> str:
         # 예외는 로그에 남기고 호출자에게는 친절 메시지 리턴
         print(f"[ERROR] 급식 불러오기 실패: {e}")
         return f"급식 불러오기 실패: {e}"
-
-
-
-
-
 
 
 
