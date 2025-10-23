@@ -162,15 +162,23 @@ def fetch_timetable_text(grade: int, clas: int, target_date: dt.date) -> str:
 _KC_SCHOOL_CODE = "B000012547"
 
 def fetch_meal_text(target_date: dt.date) -> str:
-    import certifi  # certifi 사용
+    import certifi
     yearmonth = target_date.strftime("%Y%m")
     url = f"https://school.koreacharts.com/school/meals/{_KC_SCHOOL_CODE}/{yearmonth}.html"
     headers = {"User-Agent": "Mozilla/5.0"}
 
     try:
+        # 디버그 출력: certifi 경로와 요청 URL 확인
+        print(f"[DEBUG] certifi.where(): {certifi.where()}")
+        print(f"[DEBUG] 요청 URL: {url}")
+
+        # 반드시 이 줄이 있어야 합니다:
         r = requests.get(url, headers=headers, timeout=10, verify=certifi.where())
+
+        print(f"[DEBUG] HTTP 상태코드: {getattr(r, 'status_code', 'NO_RESPONSE')}")
         r.raise_for_status()
         soup = BeautifulSoup(r.text, "html.parser")
+        print(f"[DEBUG] 페이지 길이: {len(r.text)}")
 
         target_day = str(int(target_date.strftime("%d")))
         for row in soup.select("tr"):
@@ -191,12 +199,20 @@ def fetch_meal_text(target_date: dt.date) -> str:
                             meals.append(f"{label}\n{content}".strip() if label else content)
 
                     if meals:
+                        print(f"[DEBUG] 급식 내용: {meals}")
                         return "\n\n".join(meals)
                     else:
+                        print("[DEBUG] 해당 날짜에 meals 리스트는 비어있음")
                         return f"{target_date.strftime('%Y-%m-%d')} 급식 정보가 없습니다."
+
+        print("[DEBUG] tr 루프 완료 — 해당 날짜 발견 못함")
         return f"{target_date.strftime('%Y-%m-%d')} 급식 정보가 없습니다."
+
     except Exception as e:
+        # 예외는 로그에 남기고 호출자에게는 친절 메시지 리턴
+        print(f"[ERROR] 급식 불러오기 실패: {e}")
         return f"급식 불러오기 실패: {e}"
+
 
 
 
