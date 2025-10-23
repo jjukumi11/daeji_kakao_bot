@@ -4,3 +4,4 @@ requests
 beautifulsoup4
 lxml
 pycomcigan==1.4.0
+certifi
