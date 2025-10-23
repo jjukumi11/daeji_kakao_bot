@@ -160,7 +160,7 @@ def fetch_timetable_text(grade: int, clas: int, target_date: dt.date) -> str:
 _KC_SCHOOL_CODE = "B000012547"
 
 def fetch_meal_text(target_date: dt.date) -> str:
-    import certifi  # <- 여기 추가
+    import certifi  # certifi 인증서 사용
 
     yearmonth = target_date.strftime("%Y%m")
     url = f"https://school.koreacharts.com/school/meals/{_KC_SCHOOL_CODE}/{yearmonth}.html"
@@ -173,6 +173,8 @@ def fetch_meal_text(target_date: dt.date) -> str:
         soup = BeautifulSoup(r.text, "html.parser")
 
         target_day = str(int(target_date.strftime("%d")))
+
+        # HTML tr 중 td.text-center에서 날짜와 급식 정보 추출
         for row in soup.select("tr"):
             cols = row.find_all("td", class_="text-center")
             if len(cols) >= 3:
