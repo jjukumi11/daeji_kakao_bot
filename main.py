@@ -5,6 +5,8 @@ import datetime as dt
 from typing import Dict, List, Optional
 
 import requests
+import certifi
+print(certifi.where())  # Render 로그에서 경로 확인용
 from bs4 import BeautifulSoup
 from fastapi import FastAPI, Request, Header
 import uvicorn
