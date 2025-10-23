@@ -166,14 +166,13 @@ def fetch_meal_text(target_date: dt.date) -> str:
     headers = {"User-Agent": "Mozilla/5.0"}
 
     try:
-        # requests가 certifi의 CA 번들을 사용하도록 명시
+        print(f"[DEBUG] 요청 URL: {url}")
         r = requests.get(url, headers=headers, timeout=10, verify=certifi.where())
         r.raise_for_status()
         soup = BeautifulSoup(r.text, "html.parser")
+        print(f"[DEBUG] 페이지 로드 성공, 길이: {len(r.text)}")
 
         target_day = str(int(target_date.strftime("%d")))
-
-        # HTML tr 중 td.text-center에서 날짜와 급식 정보 추출
         for row in soup.select("tr"):
             cols = row.find_all("td", class_="text-center")
             if len(cols) >= 3:
@@ -189,10 +188,10 @@ def fetch_meal_text(target_date: dt.date) -> str:
                         if label and label in content:
                             content = content.replace(label, "").strip()
                         if content:
-                            # label이 비어있으면 content만 추가
                             meals.append(f"{label}\n{content}".strip() if label else content)
 
                     if meals:
+                        print(f"[DEBUG] 급식 내용: {meals}")
                         return "\n\n".join(meals)
                     else:
                         return f"{target_date.strftime('%Y-%m-%d')} 급식 정보가 없습니다."
@@ -200,7 +199,9 @@ def fetch_meal_text(target_date: dt.date) -> str:
         return f"{target_date.strftime('%Y-%m-%d')} 급식 정보가 없습니다."
 
     except Exception as e:
+        print(f"[ERROR] 급식 불러오기 실패: {e}")
         return f"급식 불러오기 실패: {e}"
+
 
 
 
