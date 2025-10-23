@@ -160,7 +160,7 @@ def fetch_timetable_text(grade: int, clas: int, target_date: dt.date) -> str:
 _KC_SCHOOL_CODE = "B000012547"
 
 def fetch_meal_text(target_date: dt.date) -> str:
-    import certifi  # <-- 여기에 certifi 불러오기
+    import certifi
     yearmonth = target_date.strftime("%Y%m")
     url = f"https://school.koreacharts.com/school/meals/{_KC_SCHOOL_CODE}/{yearmonth}.html"
     headers = {"User-Agent": "Mozilla/5.0"}
@@ -173,7 +173,7 @@ def fetch_meal_text(target_date: dt.date) -> str:
 
         target_day = str(int(target_date.strftime("%d")))
 
-        # ✅ 새로운 HTML 구조 반영
+        # HTML tr 중 td.text-center에서 날짜와 급식 정보 추출
         for row in soup.select("tr"):
             cols = row.find_all("td", class_="text-center")
             if len(cols) >= 3:
@@ -181,11 +181,10 @@ def fetch_meal_text(target_date: dt.date) -> str:
                 if day == target_day:
                     meal_cell = cols[2]
                     paragraphs = meal_cell.find_all("p")
-
                     meals = []
                     for p in paragraphs:
-                        title = p.find("b")
-                        label = title.get_text(strip=True) if title else ""
+                        title_tag = p.find("b")
+                        label = title_tag.get_text(strip=True) if title_tag else ""
                         content = p.get_text("\n", strip=True)
                         if label and label in content:
                             content = content.replace(label, "").strip()
@@ -202,6 +201,8 @@ def fetch_meal_text(target_date: dt.date) -> str:
 
     except Exception as e:
         return f"급식 불러오기 실패: {e}"
+
+
 
 
 
