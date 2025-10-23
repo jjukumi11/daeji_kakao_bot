@@ -162,31 +162,44 @@ _KC_SCHOOL_CODE = "B000012547"
 def fetch_meal_text(target_date: dt.date) -> str:
     yearmonth = target_date.strftime("%Y%m")
     url = f"https://school.koreacharts.com/school/meals/{_KC_SCHOOL_CODE}/{yearmonth}.html"
+    headers = {"User-Agent": "Mozilla/5.0"}
 
     try:
-        headers = {"User-Agent": "Mozilla/5.0"}
         r = requests.get(url, headers=headers, timeout=10)
         r.raise_for_status()
         soup = BeautifulSoup(r.text, "html.parser")
 
         target_day = str(int(target_date.strftime("%d")))
 
-        meals = []
+        # ✅ 새로운 HTML 구조 반영
         for row in soup.select("tr"):
             cols = row.find_all("td", class_="text-center")
             if len(cols) >= 3:
                 day = cols[0].get_text(strip=True)
                 if day == target_day:
-                    menu_text = cols[2].get_text(" ", strip=True)
-                    meals.append(menu_text)
+                    meal_cell = cols[2]
+                    paragraphs = meal_cell.find_all("p")
 
-        if meals:
-            return "\n".join(meals)
-        else:
-            return f"{target_date.strftime('%Y-%m-%d')} 급식 정보가 없습니다."
+                    meals = []
+                    for p in paragraphs:
+                        title = p.find("b")
+                        label = title.get_text(strip=True) if title else ""
+                        content = p.get_text("\n", strip=True)
+                        if label and label in content:
+                            content = content.replace(label, "").strip()
+                        if content:
+                            meals.append(f"{label}\n{content}".strip())
+
+                    if meals:
+                        return "\n\n".join(meals)
+                    else:
+                        return f"{target_date.strftime('%Y-%m-%d')} 급식 정보가 없습니다."
+
+        return f"{target_date.strftime('%Y-%m-%d')} 급식 정보가 없습니다."
 
     except Exception as e:
         return f"급식 불러오기 실패: {e}"
+
 
 # ====== 학사일정 (코드 내장) ======
 # 👉 필요한 내용은 직접 event에 기입/수정 가능
