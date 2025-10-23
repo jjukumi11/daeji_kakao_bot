@@ -162,21 +162,17 @@ def fetch_timetable_text(grade: int, clas: int, target_date: dt.date) -> str:
 _KC_SCHOOL_CODE = "B000012547"
 
 def fetch_meal_text(target_date: dt.date) -> str:
-    import certifi  # certifi 인증서 사용
-
+    import certifi  # certifi 사용
     yearmonth = target_date.strftime("%Y%m")
     url = f"https://school.koreacharts.com/school/meals/{_KC_SCHOOL_CODE}/{yearmonth}.html"
     headers = {"User-Agent": "Mozilla/5.0"}
 
     try:
-        # requests가 certifi의 CA 인증서를 사용하도록 설정
         r = requests.get(url, headers=headers, timeout=10, verify=certifi.where())
         r.raise_for_status()
         soup = BeautifulSoup(r.text, "html.parser")
 
         target_day = str(int(target_date.strftime("%d")))
-
-        # HTML tr 중 td.text-center에서 날짜와 급식 정보 추출
         for row in soup.select("tr"):
             cols = row.find_all("td", class_="text-center")
             if len(cols) >= 3:
@@ -198,11 +194,10 @@ def fetch_meal_text(target_date: dt.date) -> str:
                         return "\n\n".join(meals)
                     else:
                         return f"{target_date.strftime('%Y-%m-%d')} 급식 정보가 없습니다."
-
         return f"{target_date.strftime('%Y-%m-%d')} 급식 정보가 없습니다."
-
     except Exception as e:
         return f"급식 불러오기 실패: {e}"
+
 
 
 
