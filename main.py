@@ -163,6 +163,13 @@ _KC_SCHOOL_CODE = "B000012547"
 
 def fetch_meal_text(target_date: dt.date) -> str:
     import certifi
+    import urllib3
+    import requests
+    from bs4 import BeautifulSoup
+
+    # SSL 인증서 경고 비활성화
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
     yearmonth = target_date.strftime("%Y%m")
     url = f"https://school.koreacharts.com/school/meals/{_KC_SCHOOL_CODE}/{yearmonth}.html"
     headers = {"User-Agent": "Mozilla/5.0"}
@@ -172,8 +179,8 @@ def fetch_meal_text(target_date: dt.date) -> str:
         print(f"[DEBUG] certifi.where(): {certifi.where()}")
         print(f"[DEBUG] 요청 URL: {url}")
 
-        # 반드시 이 줄이 있어야 합니다:
-        r = requests.get(url, headers=headers, timeout=10, verify=True)
+        # 🔹 SSL 검증 비활성화 (Render 환경용)
+        r = requests.get(url, headers=headers, timeout=10, verify=False)
 
         print(f"[DEBUG] HTTP 상태코드: {getattr(r, 'status_code', 'NO_RESPONSE')}")
         r.raise_for_status()
