@@ -1,6 +1,7 @@
 import os
 import re
-import sqlite3
+import psycopg2
+from psycopg2.extras import RealDictCursor
 import datetime as dt
 from typing import Dict, List, Optional
 
@@ -24,38 +25,67 @@ except Exception:
 app = FastAPI()
 
 # ====== DB ======
+# ====== 환경변수 로드 (.env 사용) ======
+from dotenv import load_dotenv
+import os
+
+load_dotenv()  # .env 파일 읽기
+
+DATABASE_URL = os.environ.get("DATABASE_URL")
+if not DATABASE_URL:
+    raise RuntimeError("[ERROR] DATABASE_URL 환경변수가 설정되지 않았습니다. .env 파일 확인 또는 배포 환경 변수 설정 필요")
+
+
+
+def get_connection():
+    return psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
+
 def init_db():
-    conn = sqlite3.connect(DB_PATH)
-    cur = conn.cursor()
-    cur.execute("""
-    CREATE TABLE IF NOT EXISTS users (
-        kakao_id TEXT PRIMARY KEY,
-        grade INTEGER,
-        class INTEGER
-    )
-    """)
-    conn.commit()
-    conn.close()
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            kakao_id TEXT PRIMARY KEY,
+            grade INTEGER,
+            class INTEGER
+        )
+        """)
+        conn.commit()
+        conn.close()
+        print("[DB] ✅ Supabase PostgreSQL 연결 성공 및 users 테이블 확인 완료")
+    except Exception as e:
+        print(f"[DB] ❌ 초기화 실패: {e}")
 
 def get_user(kakao_id: str) -> Optional[Dict]:
-    conn = sqlite3.connect(DB_PATH)
-    cur = conn.cursor()
-    cur.execute("SELECT grade, class FROM users WHERE kakao_id=?", (kakao_id,))
-    row = cur.fetchone()
-    conn.close()
-    if row:
-        return {"grade": row[0], "class": row[1]}
-    return None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT grade, class FROM users WHERE kakao_id = %s", (kakao_id,))
+        row = cur.fetchone()
+        conn.close()
+        if row:
+            return {"grade": row["grade"], "class": row["class"]}
+        return None
+    except Exception as e:
+        print(f"[DB] get_user 오류: {e}")
+        return None
 
 def set_user(kakao_id: str, grade: int, clas: int) -> None:
-    conn = sqlite3.connect(DB_PATH)
-    cur = conn.cursor()
-    cur.execute(
-        "INSERT OR REPLACE INTO users (kakao_id, grade, class) VALUES (?, ?, ?)",
-        (kakao_id, grade, clas),
-    )
-    conn.commit()
-    conn.close()
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("""
+            INSERT INTO users (kakao_id, grade, class)
+            VALUES (%s, %s, %s)
+            ON CONFLICT (kakao_id) DO UPDATE
+            SET grade = EXCLUDED.grade, class = EXCLUDED.class
+        """, (kakao_id, grade, clas))
+        conn.commit()
+        conn.close()
+        print(f"[DB] 사용자 {kakao_id} 저장 완료 ({grade}학년 {clas}반)")
+    except Exception as e:
+        print(f"[DB] set_user 오류: {e}")
 
 init_db()
 
